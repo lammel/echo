@@ -5,8 +5,6 @@ package middleware
 import (
 	"context"
 	"errors"
-	"github.com/labstack/echo/v4"
-	"github.com/stretchr/testify/assert"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -14,6 +12,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/labstack/echo/v4"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestTimeoutSkipper(t *testing.T) {
@@ -174,4 +175,29 @@ func TestTimeoutTestRequestClone(t *testing.T) {
 
 	assert.NoError(t, err)
 
+}
+
+// TestTimeoutDataRace shows a data race occurs if the handle func executes for same duration as specified timeout.
+func TestTimeoutDataRace(t *testing.T) {
+	t.Parallel()
+	const timeout = 10 * time.Millisecond
+	mw := TimeoutWithConfig(TimeoutConfig{
+		Timeout: timeout,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+
+	e := echo.New()
+	c := e.NewContext(req, rec)
+
+	const helloWorld = "Hello, World!"
+	err := mw(func(c echo.Context) error {
+		time.Sleep(timeout)
+		return c.String(http.StatusOK, helloWorld)
+	})(c)
+
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, helloWorld, rec.Body.String())
 }
